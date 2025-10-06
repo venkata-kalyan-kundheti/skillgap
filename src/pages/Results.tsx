@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CircleCheck as CheckCircle2, Circle as XCircle, BookOpen, Calendar, ArrowLeft, Target } from "lucide-react";
+import { emailReport, getCurrentUser } from "@/services/apiClient";
 
 interface RoadmapPhase {
   period: string;
@@ -27,6 +28,8 @@ const Results = () => {
   const navigate = useNavigate();
   const [roadmapData, setRoadmapData] = useState<RoadmapData | null>(null);
   const [selectedRole, setSelectedRole] = useState<string>("");
+  const [canEmail, setCanEmail] = useState<boolean>(false);
+  const [emailing, setEmailing] = useState<boolean>(false);
 
   useEffect(() => {
     // Load data from sessionStorage
@@ -44,6 +47,7 @@ const Results = () => {
     if (!storedRoadmap && !storedRole) {
       navigate('/');
     }
+    getCurrentUser().then((res) => setCanEmail(res.authenticated)).catch(() => setCanEmail(false));
   }, [navigate]);
 
 
@@ -300,8 +304,8 @@ const Results = () => {
             </CardContent>
           </Card>
 
-          {/* Bottom Action */}
-          <div className="flex justify-center pt-8 animate-fade-in" style={{ animationDelay: "0.3s" }}>
+          {/* Bottom Actions */}
+          <div className="flex flex-col sm:flex-row gap-4 justify-center pt-8 animate-fade-in" style={{ animationDelay: "0.3s" }}>
             <Button 
               variant="hero" 
               size="lg"
@@ -310,6 +314,26 @@ const Results = () => {
             >
               Analyze Another Resume
             </Button>
+            {canEmail && roadmapData && (
+              <Button
+                variant="default"
+                size="lg"
+                disabled={emailing}
+                onClick={async () => {
+                  setEmailing(true);
+                  try {
+                    await emailReport(selectedRole, roadmapData);
+                    alert('Report sent to your email');
+                  } catch (e) {
+                    alert('Failed to send email');
+                  } finally {
+                    setEmailing(false);
+                  }
+                }}
+              >
+                {emailing ? 'Sending...' : 'Email me this report (PDF)'}
+              </Button>
+            )}
           </div>
         </div>
       </div>

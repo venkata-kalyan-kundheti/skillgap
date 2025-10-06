@@ -3,6 +3,7 @@
  */
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const withCredentials: RequestInit = { credentials: 'include' };
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -76,7 +77,7 @@ export async function fetchRolesFromBackend(): Promise<ApiResponse<Array<{
  */
 export async function checkBackendHealth(): Promise<boolean> {
   try {
-    const response = await fetch(`${API_BASE_URL}/health`);
+    const response = await fetch(`${API_BASE_URL}/health`, withCredentials);
     return response.ok;
   } catch (error) {
     return false;
@@ -108,6 +109,7 @@ export async function generateRoadmap(resumeText: string, jobRole: string): Prom
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ resumeText, jobRole }),
+      ...withCredentials,
     });
 
     const result = await response.json();
@@ -123,5 +125,35 @@ export async function generateRoadmap(resumeText: string, jobRole: string): Prom
       success: false,
       error: error instanceof Error ? error.message : 'Failed to generate roadmap'
     };
+  }
+}
+
+export async function getCurrentUser(): Promise<{ authenticated: boolean; user: { id: string; email: string; name?: string; imageUrl?: string } | null }> {
+  const response = await fetch(`${API_BASE_URL}/auth/me`, withCredentials);
+  return response.json();
+}
+
+export function getGoogleAuthUrl(): string {
+  return `${API_BASE_URL}/auth/google`;
+}
+
+export async function logout(): Promise<boolean> {
+  const response = await fetch(`${API_BASE_URL}/auth/logout`, { method: 'POST', ...withCredentials });
+  return response.ok;
+}
+
+export async function emailReport(selectedRole: string, roadmapData: any): Promise<ApiResponse<{}>> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/email-report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selectedRole, roadmapData }),
+      ...withCredentials,
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Failed to send email');
+    return result;
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to send email' };
   }
 }
