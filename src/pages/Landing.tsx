@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Upload, Sparkles, TrendingUp, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,29 +8,16 @@ import Navigation from "@/components/Navigation";
 import { useNavigate } from "react-router-dom";
 import { parseResume, ParsedResume } from "@/services/resumeParser";
 import { getRoles } from "@/services/rolesService";
-import { uploadResumeToBackend, checkBackendHealth, generateRoadmap } from "@/services/apiClient";
+import { generateCareerRoadmap } from "@/services/aiService";
 
 const Landing = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedRole, setSelectedRole] = useState<string>("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [parsedResume, setParsedResume] = useState<ParsedResume | null>(null);
-  const [useBackend, setUseBackend] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
   const roles = getRoles();
-
-  // Check if backend is available on mount
-  useEffect(() => {
-    checkBackendHealth().then((isHealthy) => {
-      setUseBackend(isHealthy);
-      if (isHealthy) {
-        console.log('✅ Backend connected');
-      } else {
-        console.log('⚠️ Backend not available, using client-side parsing');
-      }
-    });
-  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -68,115 +55,43 @@ const Landing = () => {
       });
       return;
     }
-    
+
     setIsAnalyzing(true);
-    
+
     try {
-      let parsed: ParsedResume;
-
-      // Try backend first if available
-      if (useBackend) {
-        toast({
-          title: "Uploading to backend...",
-          description: "Processing your resume on the server",
-        });
-
-        const result = await uploadResumeToBackend(selectedFile);
-        
-        if (result.success && result.data) {
-          parsed = {
-            text: result.data.text,
-            fileName: result.data.fileName,
-            fileSize: result.data.fileSize,
-            fileType: result.data.fileType,
-          };
-          console.log('✅ Resume parsed via backend');
-        } else {
-          // Fallback to client-side if backend fails
-          console.log('⚠️ Backend failed, falling back to client-side parsing');
-          toast({
-            title: "Using local parsing...",
-            description: "Backend unavailable, processing locally",
-          });
-          parsed = await parseResume(selectedFile);
-        }
-      } else {
-        // Use client-side parsing
-        toast({
-          title: "Parsing resume...",
-          description: "Extracting text from your document",
-        });
-        parsed = await parseResume(selectedFile);
-      }
-      
-      setParsedResume(parsed);
-      
       toast({
-        title: "Analysis complete",
-        description: `Successfully extracted ${parsed.text.length} characters from your resume`,
+        title: "Parsing resume...",
+        description: "Extracting text from your document",
       });
 
-      // Call Gemini API to generate roadmap
-      if (useBackend) {
-        toast({
-          title: "Generating roadmap...",
-          description: "AI is analyzing your skills and creating a personalized plan",
-        });
+      const parsed = await parseResume(selectedFile);
+      setParsedResume(parsed);
 
-        try {
-          const roadmapResult = await generateRoadmap(parsed.text, selectedRole);
-          
-          if (roadmapResult.success && roadmapResult.data) {
-            console.log('✅ Roadmap generated:', roadmapResult.data);
-            
-            // Store all data for results page
-            sessionStorage.setItem('parsedResume', JSON.stringify(parsed));
-            sessionStorage.setItem('selectedRole', selectedRole);
-            sessionStorage.setItem('roadmapData', JSON.stringify(roadmapResult.data));
-            
-            toast({
-              title: "Roadmap ready!",
-              description: `${roadmapResult.data.fitPercentage}% match with your target role`,
-            });
-            
-            // Navigate to results page
-            setTimeout(() => {
-              navigate("/results");
-            }, 1000);
-          } else {
-            throw new Error('Failed to generate roadmap');
-          }
-        } catch (roadmapError) {
-          console.error('Roadmap generation error:', roadmapError);
-          toast({
-            title: "Roadmap generation failed",
-            description: "Proceeding with basic analysis",
-            variant: "destructive",
-          });
-          
-          // Store basic data and navigate anyway
-          sessionStorage.setItem('parsedResume', JSON.stringify(parsed));
-          sessionStorage.setItem('selectedRole', selectedRole);
-          
-          setTimeout(() => {
-            navigate("/results");
-          }, 1000);
-        }
-      } else {
-        // If no backend, just store basic data
-        sessionStorage.setItem('parsedResume', JSON.stringify(parsed));
-        sessionStorage.setItem('selectedRole', selectedRole);
-        
-        setTimeout(() => {
-          navigate("/results");
-        }, 1000);
-      }
-      
-    } catch (error) {
-      console.error('Resume parsing error:', error);
       toast({
-        title: "Parsing failed",
-        description: error instanceof Error ? error.message : "Failed to parse resume. Please try again.",
+        title: "Generating roadmap...",
+        description: "AI is analyzing your skills and creating a personalized plan",
+      });
+
+      const roadmapData = await generateCareerRoadmap(parsed.text, selectedRole);
+
+      sessionStorage.setItem('parsedResume', JSON.stringify(parsed));
+      sessionStorage.setItem('selectedRole', selectedRole);
+      sessionStorage.setItem('roadmapData', JSON.stringify(roadmapData));
+
+      toast({
+        title: "Analysis complete!",
+        description: `${roadmapData.fitPercentage}% match with your target role`,
+      });
+
+      setTimeout(() => {
+        navigate("/results");
+      }, 1000);
+
+    } catch (error) {
+      console.error('Analysis error:', error);
+      toast({
+        title: "Analysis failed",
+        description: error instanceof Error ? error.message : "Failed to analyze resume. Please try again.",
         variant: "destructive",
       });
     } finally {
