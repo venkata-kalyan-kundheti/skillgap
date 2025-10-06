@@ -1,23 +1,33 @@
-import { useState } from "react";
-import { Upload, Sparkles, TrendingUp, Loader as Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Upload, Sparkles, TrendingUp, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import Navigation from "@/components/Navigation";
 import { useNavigate } from "react-router-dom";
-import { parseResume, ParsedResume } from "@/services/resumeParser";
+import { uploadResumeToBackend, checkBackendHealth, generateRoadmap } from "@/services/apiClient";
 import { getRoles } from "@/services/rolesService";
-import { generateCareerRoadmap } from "@/services/aiService";
 
 const Landing = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedRole, setSelectedRole] = useState<string>("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [parsedResume, setParsedResume] = useState<ParsedResume | null>(null);
+  const [backendAvailable, setBackendAvailable] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
   const roles = getRoles();
+
+  useEffect(() => {
+    checkBackendHealth().then((isHealthy) => {
+      setBackendAvailable(isHealthy);
+      if (isHealthy) {
+        console.log('✅ Backend connected successfully');
+      } else {
+        console.warn('⚠️ Backend not available. Start backend with: cd backend && npm start');
+      }
+    });
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -56,31 +66,47 @@ const Landing = () => {
       return;
     }
 
+    if (!backendAvailable) {
+      toast({
+        title: "Backend not connected",
+        description: "Please start the backend server first",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsAnalyzing(true);
 
     try {
       toast({
-        title: "Parsing resume...",
-        description: "Extracting text from your document",
+        title: "Uploading resume...",
+        description: "Processing your document",
       });
 
-      const parsed = await parseResume(selectedFile);
-      setParsedResume(parsed);
+      const uploadResult = await uploadResumeToBackend(selectedFile);
+
+      if (!uploadResult.success || !uploadResult.data) {
+        throw new Error(uploadResult.error || 'Failed to upload resume');
+      }
 
       toast({
         title: "Generating roadmap...",
-        description: "AI is analyzing your skills and creating a personalized plan",
+        description: "AI is analyzing your skills",
       });
 
-      const roadmapData = await generateCareerRoadmap(parsed.text, selectedRole);
+      const roadmapResult = await generateRoadmap(uploadResult.data.text, selectedRole);
 
-      sessionStorage.setItem('parsedResume', JSON.stringify(parsed));
+      if (!roadmapResult.success || !roadmapResult.data) {
+        throw new Error(roadmapResult.error || 'Failed to generate roadmap');
+      }
+
+      sessionStorage.setItem('parsedResume', JSON.stringify(uploadResult.data));
       sessionStorage.setItem('selectedRole', selectedRole);
-      sessionStorage.setItem('roadmapData', JSON.stringify(roadmapData));
+      sessionStorage.setItem('roadmapData', JSON.stringify(roadmapResult.data));
 
       toast({
         title: "Analysis complete!",
-        description: `${roadmapData.fitPercentage}% match with your target role`,
+        description: `${roadmapResult.data.fitPercentage}% match with your target role`,
       });
 
       setTimeout(() => {

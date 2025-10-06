@@ -7,16 +7,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, XCircle, BookOpen, Calendar, ArrowLeft, Target } from "lucide-react";
 
+interface RoadmapPhase {
+  period: string;
+  title: string;
+  goals: string[];
+  resources: string[];
+}
+
 interface RoadmapData {
   skillsExtracted: string[];
   missingSkills: string[];
   suggestedProjects: string[];
-  roadmap: {
-    week1: string;
-    week2: string;
-    week3: string;
-    week4: string;
-  };
+  roadmap: RoadmapPhase[];
+  estimatedTimeframe: string;
   fitPercentage: number;
 }
 
@@ -43,7 +46,6 @@ const Results = () => {
     }
   }, [navigate]);
 
-  const weekKeys = roadmapData ? Object.keys(roadmapData.roadmap).filter(k => k.startsWith('week')) : [];
 
   const handleBackToHome = () => {
     // Clear session storage
@@ -210,17 +212,21 @@ const Results = () => {
                   <Calendar className="h-6 w-6 text-primary" />
                 </div>
                 <div>
-                  <CardTitle>4-Week Learning Roadmap</CardTitle>
-                  <CardDescription>Your personalized path to success</CardDescription>
+                  <CardTitle>Learning Roadmap</CardTitle>
+                  <CardDescription>
+                    {roadmapData?.estimatedTimeframe
+                      ? `Estimated completion: ${roadmapData.estimatedTimeframe}`
+                      : "Your personalized path to success"}
+                  </CardDescription>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
-              {roadmapData && weekKeys.length > 0 ? (
+              {roadmapData && roadmapData.roadmap && roadmapData.roadmap.length > 0 ? (
                 <div className="space-y-6">
-                  {weekKeys.map((weekKey, i) => (
-                    <div 
-                      key={i} 
+                  {roadmapData.roadmap.map((phase, i) => (
+                    <div
+                      key={i}
                       className="flex gap-6 animate-fade-in"
                       style={{ animationDelay: `${i * 0.15}s` }}
                     >
@@ -231,19 +237,55 @@ const Results = () => {
                             <span className="text-xs font-bold text-primary-foreground">{i + 1}</span>
                           </div>
                         </div>
-                        {i < weekKeys.length - 1 && (
-                          <div className="flex-1 w-0.5 bg-gradient-to-b from-primary/50 to-primary/10 mt-2 min-h-[80px]"></div>
+                        {i < roadmapData.roadmap.length - 1 && (
+                          <div className="flex-1 w-0.5 bg-gradient-to-b from-primary/50 to-primary/10 mt-2 min-h-[100px]"></div>
                         )}
                       </div>
-                      
+
                       {/* Content */}
                       <div className="flex-1 pb-6">
                         <Card className="bg-background/50 hover:shadow-medium transition-all duration-300">
-                          <CardContent className="p-5">
-                            <h4 className="font-semibold text-lg mb-2 text-primary">Week {i + 1}</h4>
-                            <p className="text-sm text-muted-foreground leading-relaxed">
-                              {roadmapData.roadmap[weekKey as keyof typeof roadmapData.roadmap]}
-                            </p>
+                          <CardContent className="p-5 space-y-4">
+                            <div>
+                              <div className="flex items-center gap-2 mb-2">
+                                <Badge variant="outline" className="text-xs">
+                                  {phase.period}
+                                </Badge>
+                              </div>
+                              <h4 className="font-semibold text-lg text-primary">
+                                {phase.title}
+                              </h4>
+                            </div>
+
+                            {/* Goals */}
+                            {phase.goals && phase.goals.length > 0 && (
+                              <div>
+                                <h5 className="text-sm font-medium mb-2 text-foreground">Learning Goals:</h5>
+                                <ul className="space-y-2">
+                                  {phase.goals.map((goal, goalIdx) => (
+                                    <li key={goalIdx} className="flex items-start gap-2 text-sm text-muted-foreground">
+                                      <CheckCircle2 className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                                      <span>{goal}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+
+                            {/* Resources */}
+                            {phase.resources && phase.resources.length > 0 && (
+                              <div>
+                                <h5 className="text-sm font-medium mb-2 text-foreground">Resources:</h5>
+                                <ul className="space-y-2">
+                                  {phase.resources.map((resource, resIdx) => (
+                                    <li key={resIdx} className="flex items-start gap-2 text-sm text-muted-foreground">
+                                      <BookOpen className="h-4 w-4 text-accent mt-0.5 flex-shrink-0" />
+                                      <span>{resource}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
                           </CardContent>
                         </Card>
                       </div>

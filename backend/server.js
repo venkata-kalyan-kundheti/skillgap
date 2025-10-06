@@ -128,7 +128,7 @@ app.post('/generate-roadmap', async (req, res) => {
     }
 
     // Create the model
-    const model = genAI.getGenerativeModel({ model: 'models/gemini-2.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
 
     // Create the prompt
     const prompt = `You are a career development expert. Analyze the following resume and compare it with the target job role to provide a detailed skill gap analysis and learning roadmap.
@@ -143,12 +143,15 @@ Please analyze and provide a response in the following JSON format (return ONLY 
   "skillsExtracted": ["skill1", "skill2", ...],
   "missingSkills": ["skill1", "skill2", ...],
   "suggestedProjects": ["project1", "project2", ...],
-  "roadmap": {
-    "week1": "Focus area and specific goals",
-    "week2": "Focus area and specific goals",
-    "week3": "Focus area and specific goals",
-    "week4": "Focus area and specific goals"
-  },
+  "roadmap": [
+    {
+      "period": "Week 1-2" or "Month 1" (choose based on skill gap),
+      "title": "Foundation Phase",
+      "goals": ["Goal 1", "Goal 2", ...],
+      "resources": ["Resource 1", "Resource 2", ...]
+    }
+  ],
+  "estimatedTimeframe": "4 weeks" or "3 months" (total time needed),
   "fitPercentage": 75
 }
 
@@ -156,9 +159,18 @@ Instructions:
 1. Extract all technical and soft skills mentioned in the resume
 2. Identify key skills required for the ${jobRole} role that are missing from the resume
 3. Suggest 3-5 practical projects that would help develop the missing skills
-4. Create a 4-week learning roadmap with specific, actionable goals for each week
-5. Calculate a fit percentage (0-100) based on how well the resume matches the job role requirements
-6. Return ONLY the JSON object, no additional text or markdown`;
+4. Create a flexible learning roadmap based on the skill gap:
+   - If skill gap is SMALL (fitPercentage > 70): Create a 4-6 week roadmap with weekly phases
+   - If skill gap is MODERATE (fitPercentage 40-70): Create a 2-3 month roadmap with bi-weekly or monthly phases
+   - If skill gap is LARGE (fitPercentage < 40): Create a 3-6 month roadmap with monthly phases
+5. Each roadmap phase should include:
+   - period: Time period for this phase (e.g., "Week 1-2", "Month 1", "Weeks 3-4")
+   - title: A descriptive title for what this phase focuses on
+   - goals: Specific, actionable learning goals for this period
+   - resources: Recommended learning resources, courses, or practice areas
+6. Calculate a fit percentage (0-100) based on how well the resume matches the job role requirements
+7. Set estimatedTimeframe to reflect the total duration of the roadmap
+8. Return ONLY the JSON object, no additional text or markdown`;
 
     // Generate content
     console.log('🤖 Calling Gemini API...');
@@ -182,9 +194,11 @@ Instructions:
     }
 
     // Validate the response structure
-    if (!analysisData.skillsExtracted || !analysisData.missingSkills || 
-        !analysisData.suggestedProjects || !analysisData.roadmap || 
-        typeof analysisData.fitPercentage !== 'number') {
+    if (!analysisData.skillsExtracted || !analysisData.missingSkills ||
+        !analysisData.suggestedProjects || !analysisData.roadmap ||
+        !Array.isArray(analysisData.roadmap) ||
+        typeof analysisData.fitPercentage !== 'number' ||
+        !analysisData.estimatedTimeframe) {
       return res.status(500).json({
         success: false,
         error: 'Invalid response structure from AI'

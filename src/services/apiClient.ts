@@ -83,6 +83,13 @@ export async function checkBackendHealth(): Promise<boolean> {
   }
 }
 
+interface RoadmapPhase {
+  period: string;
+  title: string;
+  goals: string[];
+  resources: string[];
+}
+
 /**
  * Generate career roadmap using AI
  */
@@ -90,12 +97,8 @@ export async function generateRoadmap(resumeText: string, jobRole: string): Prom
   skillsExtracted: string[];
   missingSkills: string[];
   suggestedProjects: string[];
-  roadmap: {
-    week1: string;
-    week2: string;
-    week3: string;
-    week4: string;
-  };
+  roadmap: RoadmapPhase[];
+  estimatedTimeframe: string;
   fitPercentage: number;
 }>> {
   try {
