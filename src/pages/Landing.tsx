@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Upload, Sparkles, TrendingUp, Loader2 } from "lucide-react";
+import { Upload, Sparkles, TrendingUp, Loader as Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
