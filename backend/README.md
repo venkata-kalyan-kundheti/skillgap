@@ -1,5 +1,30 @@
 # SkillGap AI Backend
 
+## Environment variables
+
+Create `backend/.env` with:
+
+```
+DATABASE_URL="file:./dev.db"
+SESSION_SECRET=please-change
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+FRONTEND_URL=http://localhost:5173
+BACKEND_URL=http://localhost:3001
+GEMINI_API_KEY=your-gemini-api-key
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=you@example.com
+SMTP_PASS=your-smtp-password
+```
+
+## Auth endpoints
+- `GET /auth/google` → Redirects to Google
+- `GET /auth/google/callback` → OAuth callback
+- `GET /auth/me` → Current session user
+- `POST /auth/logout` → End session
+- `POST /email-report` → Emails PDF report to logged-in user's email
+
 Node.js/Express backend for the SkillGap AI application.
 
 ## Features

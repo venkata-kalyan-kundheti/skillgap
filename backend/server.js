@@ -1,6 +1,13 @@
-
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const session = require('express-session');
+const passport = require('passport');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const nodemailer = require('nodemailer');
+const PDFDocument = require('pdfkit');
+const { PrismaClient } = require('./generated/prisma');
+const prisma = new PrismaClient();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -10,7 +17,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AIzaSyC0v_gJNNF1zG1rTUjSTxX8cWFKTWvRzAo";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
 // Initialize Gemini AI
 let genAI;
@@ -19,10 +26,27 @@ if (GEMINI_API_KEY) {
 }
 
 // Middleware
-app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:8080', 'https://*.lovable.app'],
-  credentials: true
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+const BACKEND_URL = process.env.BACKEND_URL || `http://localhost:${PORT}`;
+const corsOrigins = ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:8080'];
+if (FRONTEND_URL && !corsOrigins.includes(FRONTEND_URL)) corsOrigins.push(FRONTEND_URL);
+app.use(cors({ origin: corsOrigins, credentials: true }));
+
+app.set('trust proxy', 1);
+app.use(session({
+  name: 'sid',
+  secret: process.env.SESSION_SECRET || 'change_this_secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  },
 }));
+app.use(passport.initialize());
+app.use(passport.session());
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -78,7 +102,61 @@ async function extractTextFromDOCX(filePath) {
   return result.value;
 }
 
+// Auth: Google OAuth
+passport.serializeUser((user, done) => done(null, user.id));
+passport.deserializeUser(async (id, done) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id } });
+    done(null, user);
+  } catch (e) {
+    done(e);
+  }
+});
+
+passport.use(new GoogleStrategy({
+  clientID: process.env.GOOGLE_CLIENT_ID || '',
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+  callbackURL: `${BACKEND_URL}/auth/google/callback`,
+}, async (_accessToken, _refreshToken, profile, done) => {
+  try {
+    const email = profile.emails && profile.emails[0] && profile.emails[0].value;
+    const name = profile.displayName;
+    const imageUrl = profile.photos && profile.photos[0] && profile.photos[0].value;
+    const googleId = profile.id;
+    if (!email) return done(new Error('Google email is required'));
+    const user = await prisma.user.upsert({
+      where: { email },
+      update: { name, imageUrl, googleId },
+      create: { email, name, imageUrl, googleId },
+    });
+    done(null, user);
+  } catch (e) {
+    done(e);
+  }
+}));
+
 // Routes
+app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+app.get('/auth/google/callback',
+  passport.authenticate('google', { failureRedirect: `${FRONTEND_URL}/login-failed`, session: true }),
+  (req, res) => res.redirect(FRONTEND_URL)
+);
+app.get('/auth/me', (req, res) => {
+  if (req.user) {
+    const { id, email, name, imageUrl } = req.user;
+    return res.json({ authenticated: true, user: { id, email, name, imageUrl } });
+  }
+  res.json({ authenticated: false, user: null });
+});
+app.post('/auth/logout', (req, res) => {
+  req.logout(err => {
+    if (err) return res.status(500).json({ success: false, error: err.message });
+    req.session.destroy(() => {
+      res.clearCookie('sid', { path: '/' });
+      res.json({ success: true });
+    });
+  });
+});
 
 // Health check
 app.get('/health', (req, res) => {
@@ -224,6 +302,37 @@ Instructions:
   }
 });
 
+// Generate PDF and email to authenticated user
+app.post('/email-report', async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: 'Not authenticated' });
+    }
+    const { selectedRole, roadmapData } = req.body || {};
+    if (!selectedRole || !roadmapData) {
+      return res.status(400).json({ success: false, error: 'selectedRole and roadmapData are required' });
+    }
+
+    const pdfBuffer = await generateReportPdf({
+      userName: req.user.name || req.user.email,
+      selectedRole,
+      roadmapData,
+    });
+
+    await sendEmailWithAttachment({
+      to: req.user.email,
+      subject: `Your SkillGap AI report – ${selectedRole}`,
+      text: 'Attached is your personalized SkillGap AI report as a PDF.',
+      attachment: { filename: `SkillGap_Report_${selectedRole}.pdf`, content: pdfBuffer },
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ Error emailing report:', error);
+    res.status(500).json({ success: false, error: error.message || 'Failed to send email' });
+  }
+});
+
 // Upload and parse resume
 app.post('/upload-resume', upload.single('resume'), async (req, res) => {
   try {
@@ -288,6 +397,99 @@ app.post('/upload-resume', upload.single('resume'), async (req, res) => {
   }
 });
 
+// Helper functions
+async function sendEmailWithAttachment({ to, subject, text, attachment }) {
+  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
+  if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
+    throw new Error('SMTP configuration is missing. Please set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS');
+  }
+  const transport = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: Number(SMTP_PORT),
+    secure: Number(SMTP_PORT) === 465,
+    auth: { user: SMTP_USER, pass: SMTP_PASS },
+  });
+  await transport.sendMail({
+    from: SMTP_USER,
+    to,
+    subject,
+    text,
+    attachments: [attachment],
+  });
+}
+
+function addWrappedText(doc, text, options = {}) {
+  const { x = 50, y = undefined, width = 500, lineGap = 4 } = options;
+  doc.text(text, x, y, { width, lineGap });
+}
+
+async function generateReportPdf({ userName, selectedRole, roadmapData }) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const chunks = [];
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    // Header
+    doc.fontSize(20).fillColor('#111827').text('SkillGap AI – Career Analysis Report');
+    doc.moveDown(0.5);
+    doc.fontSize(12).fillColor('#374151').text(`For: ${userName}`);
+    doc.text(`Target Role: ${selectedRole}`);
+    if (typeof roadmapData.fitPercentage === 'number') {
+      doc.text(`Fit Percentage: ${roadmapData.fitPercentage}%`);
+    }
+
+    doc.moveDown(1);
+    doc.strokeColor('#E5E7EB').lineWidth(1).moveTo(50, doc.y).lineTo(545, doc.y).stroke();
+    doc.moveDown(1);
+
+    // Skills Extracted
+    doc.fontSize(16).fillColor('#111827').text('Your Skills');
+    doc.moveDown(0.5);
+    doc.fontSize(11).fillColor('#374151');
+    if (Array.isArray(roadmapData.skillsExtracted) && roadmapData.skillsExtracted.length) {
+      addWrappedText(doc, `• ${roadmapData.skillsExtracted.join('\n• ')}`);
+    } else {
+      addWrappedText(doc, 'No skills extracted');
+    }
+
+    doc.moveDown(1);
+
+    // Missing Skills
+    doc.fontSize(16).fillColor('#111827').text('Skills to Develop');
+    doc.moveDown(0.5);
+    doc.fontSize(11).fillColor('#7F1D1D');
+    if (Array.isArray(roadmapData.missingSkills) && roadmapData.missingSkills.length) {
+      addWrappedText(doc, `• ${roadmapData.missingSkills.join('\n• ')}`);
+    } else {
+      addWrappedText(doc, 'No major skill gaps identified');
+    }
+
+    doc.moveDown(1);
+
+    // Roadmap
+    doc.fontSize(16).fillColor('#111827').text('Learning Roadmap');
+    doc.moveDown(0.5);
+    doc.fontSize(11).fillColor('#374151');
+    if (Array.isArray(roadmapData.roadmap) && roadmapData.roadmap.length) {
+      roadmapData.roadmap.forEach((phase, index) => {
+        doc.fontSize(12).fillColor('#1F2937').text(`${index + 1}. ${phase.title} (${phase.period})`);
+        if (Array.isArray(phase.goals) && phase.goals.length) {
+          addWrappedText(doc, `Goals:\n• ${phase.goals.join('\n• ')}`, { width: 500 });
+        }
+        if (Array.isArray(phase.resources) && phase.resources.length) {
+          addWrappedText(doc, `Resources:\n• ${phase.resources.join('\n• ')}`, { width: 500 });
+        }
+        doc.moveDown(0.5);
+      });
+    } else {
+      addWrappedText(doc, 'No roadmap data available');
+    }
+
+    doc.end();
+  });
+}
 // Error handling middleware
 app.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {

@@ -1,8 +1,19 @@
 import { Link, useLocation } from "react-router-dom";
 import { Briefcase } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { getCurrentUser, getGoogleAuthUrl, logout } from "@/services/apiClient";
 
 const Navigation = () => {
   const location = useLocation();
+  const [user, setUser] = useState<{ id: string; email: string; name?: string; imageUrl?: string } | null>(null);
+
+  useEffect(() => {
+    getCurrentUser().then((res) => {
+      if (res.authenticated) setUser(res.user);
+      else setUser(null);
+    }).catch(() => setUser(null));
+  }, [location.pathname]);
   
   const isActive = (path: string) => location.pathname === path;
   
@@ -36,14 +47,25 @@ const Navigation = () => {
             >
               Dashboard
             </Link>
-            <Link
-              to="/profile"
-              className={`text-sm font-medium transition-colors hover:text-primary ${
-                isActive("/profile") ? "text-primary" : "text-muted-foreground"
-              }`}
-            >
-              Profile
-            </Link>
+            {user ? (
+              <div className="flex items-center gap-3">
+                {user.imageUrl ? (
+                  <img src={user.imageUrl} alt="avatar" className="h-8 w-8 rounded-full" />
+                ) : (
+                  <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center text-xs font-semibold">
+                    {user.email[0].toUpperCase()}
+                  </div>
+                )}
+                <span className="text-sm text-muted-foreground hidden sm:inline">{user.name || user.email}</span>
+                <Button variant="outline" size="sm" onClick={async () => { await logout(); setUser(null); }}>
+                  Sign out
+                </Button>
+              </div>
+            ) : (
+              <Button asChild size="sm" variant="default">
+                <a href={getGoogleAuthUrl()}>Sign in with Google</a>
+              </Button>
+            )}
           </div>
         </div>
       </div>
