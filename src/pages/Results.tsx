@@ -5,7 +5,7 @@ import CircularProgress from "@/components/CircularProgress";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, XCircle, BookOpen, Calendar, ArrowLeft, Target } from "lucide-react";
+import { CircleCheck as CheckCircle2, Circle as XCircle, BookOpen, Calendar, ArrowLeft, Target } from "lucide-react";
 
 interface RoadmapPhase {
   period: string;
